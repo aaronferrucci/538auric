@@ -1,0 +1,45 @@
+---
+title: "King Auric's Options"
+date: "6/20/2020"
+author: "Aaron Ferrucci"
+output:
+  html_document:
+    df_print: paged
+knit: (function(input_file, encoding) {
+  out_dir <- 'docs';
+  rmarkdown::render(input_file,
+ encoding=encoding,
+ output_file=file.path(dirname(input_file), out_dir, 'index.html'))})
+---
+
+```{r message=F, warning=F, echo=F}
+library(dplyr)
+library(usmap)
+library(ggplot2)
+```
+From [538 Riddler: Can You Flip The Magic Coin?](https://fivethirtyeight.com/features/can-you-flip-the-magic-coin/)
+
+> From Dean Ballard comes a riddle of radiant spheres and fatherhood,
+> just in time for the summer solstice and Father’s Day:
+> 
+> King Auric adored his most prized possession: a set of perfect spheres of
+> solid gold. There was one of each size, with diameters of 1 centimeter, 2
+> centimeters, 3 centimeters, and so on. Their brilliant beauty brought joy
+> to his heart. After many years, he felt the time had finally come to pass
+> the golden spheres down to the next generation — his three children.
+> 
+> He decided it was best to give each child precisely one-third of the
+> total gold by weight, but he had a difficult time determining just how
+> to do that. After some trial and error, he managed to divide his spheres
+> into three groups of equal weight. He was further amused when he realized
+> that his collection contained the minimum number of spheres needed for
+> this division. How many golden spheres did King Auric have?
+> 
+> Extra credit: How many spheres would the king have needed to be able to
+> divide his collection among other numbers of children: two, four, five,
+> six or even more?
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
