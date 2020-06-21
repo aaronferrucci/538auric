@@ -14,7 +14,6 @@ knit: (function(input_file, encoding) {
 
 ```{r message=F, warning=F, echo=F}
 library(dplyr)
-library(usmap)
 library(ggplot2)
 ```
 From [538 Riddler: Can You Flip The Magic Coin?](https://fivethirtyeight.com/features/can-you-flip-the-magic-coin/)
@@ -43,3 +42,56 @@ From [538 Riddler: Can You Flip The Magic Coin?](https://fivethirtyeight.com/fea
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+### Preliminaries
+Thinking about the problem, what do we know?
+
+* We need at least 3 balls (more generally, at least one ball per child)
+* The weight of the gold balls is proportionate to the cube of the diameter. (I can work with cubed diameters (d3s) rather than actually ball weights.)
+* The sum of the d3s must be a multiple of 3
+
+### Nuts 'n' Bolts
+How common is it to find a sum of d3s that's divisible by 3? 
+```{r}
+n <- 15
+d3s <- seq(n)**3
+sums <- cumsum(d3s)
+sums %% 3
+```
+
+Looks like 2/3s of the sums are divisible by 3. So, a small optimization here: skip the 1/3 of cases which fail the divisible-by-3 test.
+
+
+A solution to this problem (a brute force one, anyway) could rely on finding a subset of a list of numbers which sums to a specific value. Really brute force would be to compute each subset, do the sum, and compare. There's a better way via dynamic programming, I'm sure.
+
+```{r}
+library(utils)
+for (i in seq(3, length(d3s)))
+{
+  if (sums[i] %% 3 == 0) {
+    find_sum <- sums[i] / 3
+    print(sprintf("searching for sub-sum %d in d3s up to index %d; sum: %d", find_sum, i, sums[i]))
+    for (j in seq(1, i - 2)) {
+      cur_d3s <- d3s[1:i]
+      sub <- combn(cur_d3s, j)
+      # print(sub)
+      column_sums <- apply(sub, 2, sum)
+      if (any(column_sums == find_sum)) {
+        match1 <- as.matrix(sub[,column_sums == find_sum])
+        for (k in seq(ncol(match1))) {
+          print(sprintf("found matching sub-sum(s), size %d", j))
+          print(match1[,k])
+          compl <- cur_d3s[!cur_d3s %in% match1[,k]]
+          print(sprintf("to do: can I find another sum %d in the complement list?", find_sum))
+          print(compl)
+        }
+        print("that's out of this list:")
+        print(cur_d3s)
+      }
+    }
+    # print(paste("subset length", i))
+    # combinations <- combn(d3s, i)
+    # out <- combinations[,apply(combinations, 2, sum)>=threshold]
+    # print (out)
+  }
+}
+```
