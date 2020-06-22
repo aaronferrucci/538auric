@@ -1659,69 +1659,121 @@ summary {
 <div id="nuts-n-bolts" class="section level3">
 <h3>Nuts ‘n’ Bolts</h3>
 <p>How common is it to find a sum of d3s that’s divisible by 3?</p>
-<pre class="r"><code>n &lt;- 15
+<pre class="r"><code>n &lt;- 30
 d3s &lt;- seq(n)**3
 sums &lt;- cumsum(d3s)
 sums %% 3</code></pre>
-<pre><code>##  [1] 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0</code></pre>
+<pre><code>##  [1] 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0 1 0 0</code></pre>
 <p>Looks like 2/3s of the sums are divisible by 3. So, a small optimization here: skip the 1/3 of cases which fail the divisible-by-3 test.</p>
 <p>A solution to this problem (a brute force one, anyway) could rely on finding a subset of a list of numbers which sums to a specific value. Really brute force would be to compute each subset, do the sum, and compare. There’s a better way via dynamic programming, I’m sure.</p>
-<pre class="r"><code>library(utils)
-for (i in seq(3, length(d3s)))
-{
-  if (sums[i] %% 3 == 0) {
-    find_sum &lt;- sums[i] / 3
-    print(sprintf(&quot;searching for sub-sum %d in d3s up to index %d; sum: %d&quot;, find_sum, i, sums[i]))
-    for (j in seq(1, i - 2)) {
-      cur_d3s &lt;- d3s[1:i]
-      # to do: call with a FUN which returns the combination _if_ its sum is find_sum, else NA
-      sub &lt;- combn(cur_d3s, j)
-      # print(sub)
-      column_sums &lt;- apply(sub, 2, sum)
-      if (any(column_sums == find_sum)) {
-        match1 &lt;- as.matrix(sub[,column_sums == find_sum])
-        for (k in seq(ncol(match1))) {
-          print(sprintf(&quot;found matching sub-sum(s), size %d&quot;, j))
-          print(match1[,k])
-          compl &lt;- cur_d3s[!cur_d3s %in% match1[,k]]
-          print(sprintf(&quot;to do: can I find another sum %d in the complement list?&quot;, find_sum))
-          print(compl)
+<pre class="r"><code># find all the combinations of the input list of a particular size that sum to a given value
+#   nums: numeric list of values for forming the sums
+#   count: number of elements from for the candidate sums
+#   required_sum: what the combination(s) must add up to
+get_summing_combs &lt;- function(nums, count, required_sum) {
+  # default return value is NULL (meaning no combinations were found)
+  summing_combs &lt;- NULL
+  # Get all the combinations of the &#39;nums&#39; array that have &#39;count&#39; elements
+  # this is a matrix with columns representing combinations
+  combinations &lt;- combn(nums, count)
+  # add up all the columns
+  all_column_sums &lt;- apply(combinations, 2, sum)
+  # check all those sums: do any match the requirement?
+  if (any(all_column_sums == required_sum)) {
+    # found at least one match, save it or them
+    # force single-match vector into Nx1 matrix; otherwise the result is already a matrix, and as.matrix is a no-op.
+    summing_combs &lt;- as.matrix(combinations[,all_column_sums == required_sum])
+  }
+  return(summing_combs)
+}
+
+# given a list of values proportionate to ball volume, find the smallest number of balls that
+# can be partitioned into 3 equal-volume lists.
+# The return value is a list of &lt;ball_count&gt;, then 3 vectors for the partitions.
+# If none are found, return NULL
+find_shares &lt;- function(d3s) {
+  # Start at count of 3 - no way to split 1 or 2 balls into 3 equal partitions.
+  for (i in seq(3, length(d3s))) {
+    # minor optimization: skip if the total is not a multiple of 3
+    if (sums[i] %% 3 == 0) {
+      find_sum &lt;- sums[i] / 3 # the sought sum
+      cur_d3s &lt;- d3s[1:i] # the list of i balls to consider in this step
+      # now consider all the combinations of the balls, from size 1 up to &lt;num balls&gt; - 2
+      # (no need to consider those largest combinations, because they wouldn&#39;t leave any balls
+      # to be shared by the other two heirs).
+      for (j in seq(i - 2)) {
+        # get a matrix of all the combinations of size j that sum to the required value.
+        match1 &lt;- get_summing_combs(cur_d3s, j, find_sum)
+        if (!is.null(match1)) {
+          # found one or more combinations
+          # next try to find combinations in the complement set - the remaining balls
+          for (k in seq(ncol(match1))) {
+            compl &lt;- cur_d3s[!cur_d3s %in% match1[,k]]
+            # look at all combinations of the complement set from 1 up to &lt;size - 1&gt;
+            # (like above, don&#39;t consider the largest combination, because that would leave 
+            # nothing for the remaining heir)
+            for (l in seq(length(compl) - 1)) {
+              match2 &lt;- get_summing_combs(compl, l, find_sum)
+              if (!is.null(match2)) {
+                # found at least one match in the complement set. The remainder must
+                # also be a sum, so this is a solution. Let&#39;s choose the first one.
+                # (It&#39;s possible that any remaining alternates are equivalent)
+                # bundle stuff up to be returned
+                share1 &lt;- match1[,k]
+                share2 &lt;- match2[,1]
+                share3 &lt;- compl[!compl %in% share2]
+                
+                return(list(ball_count=i, share1=share1, share2=share2, share3=share3))
+              }
+            }
+          }
         }
-        print(&quot;that&#39;s out of this list:&quot;)
-        print(cur_d3s)
       }
     }
-    # print(paste(&quot;subset length&quot;, i))
-    # combinations &lt;- combn(d3s, i)
-    # out &lt;- combinations[,apply(combinations, 2, sum)&gt;=threshold]
-    # print (out)
   }
+  return(NULL)
+}
+solution &lt;- find_shares(d3s)
+if (is.null(solution)) {
+  print(&quot;sorry, no solution was found&quot;)
+} else {
+  print(solution)
 }</code></pre>
-<pre><code>## [1] &quot;searching for sub-sum 12 in d3s up to index 3; sum: 36&quot;
-## [1] &quot;searching for sub-sum 75 in d3s up to index 5; sum: 225&quot;
-## [1] &quot;searching for sub-sum 147 in d3s up to index 6; sum: 441&quot;
-## [1] &quot;searching for sub-sum 432 in d3s up to index 8; sum: 1296&quot;
-## [1] &quot;found matching sub-sum(s), size 4&quot;
-## [1]  27  64 125 216
-## [1] &quot;to do: can I find another sum 432 in the complement list?&quot;
-## [1]   1   8 343 512
-## [1] &quot;that&#39;s out of this list:&quot;
-## [1]   1   8  27  64 125 216 343 512
-## [1] &quot;searching for sub-sum 675 in d3s up to index 9; sum: 2025&quot;
-## [1] &quot;searching for sub-sum 1452 in d3s up to index 11; sum: 4356&quot;
-## [1] &quot;searching for sub-sum 2028 in d3s up to index 12; sum: 6084&quot;
-## [1] &quot;searching for sub-sum 3675 in d3s up to index 14; sum: 11025&quot;
-## [1] &quot;found matching sub-sum(s), size 7&quot;
-## [1]    1   27   64  343  512 1000 1728
-## [1] &quot;to do: can I find another sum 3675 in the complement list?&quot;
-## [1]    8  125  216  729 1331 2197 2744
-## [1] &quot;found matching sub-sum(s), size 7&quot;
-## [1]    1   64  125  216  343  729 2197
-## [1] &quot;to do: can I find another sum 3675 in the complement list?&quot;
-## [1]    8   27  512 1000 1331 1728 2744
-## [1] &quot;that&#39;s out of this list:&quot;
-##  [1]    1    8   27   64  125  216  343  512  729 1000 1331 1728 2197 2744
-## [1] &quot;searching for sub-sum 4800 in d3s up to index 15; sum: 14400&quot;</code></pre>
+<pre><code>## $ball_count
+## [1] 23
+## 
+## $share1
+## [1]   27  216 1000 2197 5832 6859 9261
+## 
+## $share2
+## [1]     1    64   343   512  1728  4096  8000 10648
+## 
+## $share3
+## [1]     8   125   729  1331  2744  3375  4913 12167</code></pre>
+<p>King Auric has 23 gold balls, with diameter 1cm, 2cm, …, 23cm. And he can divide them equally among his three children! Some sanity checking:</p>
+<pre class="r"><code>sums[solution$ball_count] / 3</code></pre>
+<pre><code>## [1] 25392</code></pre>
+<pre class="r"><code>sum(solution$share1)</code></pre>
+<pre><code>## [1] 25392</code></pre>
+<pre class="r"><code>sum(solution$share2)</code></pre>
+<pre><code>## [1] 25392</code></pre>
+<pre class="r"><code>sum(solution$share3)</code></pre>
+<pre><code>## [1] 25392</code></pre>
+<p>Looks like all three shares add up to the required amount. But is there any overlap?</p>
+<pre class="r"><code>intersect(solution$share1, solution$share2)</code></pre>
+<pre><code>## numeric(0)</code></pre>
+<pre class="r"><code>intersect(solution$share1, solution$share3)</code></pre>
+<pre><code>## numeric(0)</code></pre>
+<pre class="r"><code>intersect(solution$share2, solution$share3)</code></pre>
+<pre><code>## numeric(0)</code></pre>
+<p>One more test, does all the shares together include all the balls?</p>
+<pre class="r"><code>un &lt;- union(union(solution$share1, solution$share2), union(solution$share1, solution$share3))
+un[sort.list(un)]</code></pre>
+<pre><code>##  [1]     1     8    27    64   125   216   343   512   729  1000  1331  1728
+## [13]  2197  2744  3375  4096  4913  5832  6859  8000  9261 10648 12167</code></pre>
+<pre class="r"><code>all(un[sort.list(un)] == d3s[1:solution$ball_count])</code></pre>
+<pre><code>## [1] TRUE</code></pre>
+<p>That’s that, seems like <em>a</em> solution. I haven’t shown that it’s a solution with the minimal number of balls; if there’s a bug in my code, I could have missed a smaller solution.</p>
 </div>
 
 

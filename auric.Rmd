@@ -15,25 +15,26 @@ knit: (function(input_file, encoding) {
 ```{r message=F, warning=F, echo=F}
 library(dplyr)
 library(ggplot2)
+library(utils)
 ```
 From [538 Riddler: Can You Flip The Magic Coin?](https://fivethirtyeight.com/features/can-you-flip-the-magic-coin/)
 
 > From Dean Ballard comes a riddle of radiant spheres and fatherhood,
 > just in time for the summer solstice and Father’s Day:
-> 
+>
 > King Auric adored his most prized possession: a set of perfect spheres of
 > solid gold. There was one of each size, with diameters of 1 centimeter, 2
 > centimeters, 3 centimeters, and so on. Their brilliant beauty brought joy
 > to his heart. After many years, he felt the time had finally come to pass
 > the golden spheres down to the next generation — his three children.
-> 
+>
 > He decided it was best to give each child precisely one-third of the
 > total gold by weight, but he had a difficult time determining just how
 > to do that. After some trial and error, he managed to divide his spheres
 > into three groups of equal weight. He was further amused when he realized
 > that his collection contained the minimum number of spheres needed for
 > this division. How many golden spheres did King Auric have?
-> 
+>
 > Extra credit: How many spheres would the king have needed to be able to
 > divide his collection among other numbers of children: two, four, five,
 > six or even more?
@@ -50,9 +51,9 @@ Thinking about the problem, what do we know?
 * The sum of the d3s must be a multiple of 3
 
 ### Nuts 'n' Bolts
-How common is it to find a sum of d3s that's divisible by 3? 
+How common is it to find a sum of d3s that's divisible by 3?
 ```{r}
-n <- 15
+n <- 30
 d3s <- seq(n)**3
 sums <- cumsum(d3s)
 sums %% 3
@@ -64,35 +65,100 @@ Looks like 2/3s of the sums are divisible by 3. So, a small optimization here: s
 A solution to this problem (a brute force one, anyway) could rely on finding a subset of a list of numbers which sums to a specific value. Really brute force would be to compute each subset, do the sum, and compare. There's a better way via dynamic programming, I'm sure.
 
 ```{r}
-library(utils)
-for (i in seq(3, length(d3s)))
-{
-  if (sums[i] %% 3 == 0) {
-    find_sum <- sums[i] / 3
-    print(sprintf("searching for sub-sum %d in d3s up to index %d; sum: %d", find_sum, i, sums[i]))
-    for (j in seq(1, i - 2)) {
-      cur_d3s <- d3s[1:i]
-      # to do: call with a FUN which returns the combination _if_ its sum is find_sum, else NA
-      sub <- combn(cur_d3s, j)
-      # print(sub)
-      column_sums <- apply(sub, 2, sum)
-      if (any(column_sums == find_sum)) {
-        match1 <- as.matrix(sub[,column_sums == find_sum])
-        for (k in seq(ncol(match1))) {
-          print(sprintf("found matching sub-sum(s), size %d", j))
-          print(match1[,k])
-          compl <- cur_d3s[!cur_d3s %in% match1[,k]]
-          print(sprintf("to do: can I find another sum %d in the complement list?", find_sum))
-          print(compl)
+# find all the combinations of the input list of a particular size that sum to a given value
+#   nums: numeric list of values for forming the sums
+#   count: number of elements from for the candidate sums
+#   required_sum: what the combination(s) must add up to
+get_summing_combs <- function(nums, count, required_sum) {
+  # default return value is NULL (meaning no combinations were found)
+  summing_combs <- NULL
+  # Get all the combinations of the 'nums' array that have 'count' elements
+  # this is a matrix with columns representing combinations
+  combinations <- combn(nums, count)
+  # add up all the columns
+  all_column_sums <- apply(combinations, 2, sum)
+  # check all those sums: do any match the requirement?
+  if (any(all_column_sums == required_sum)) {
+    # found at least one match, save it or them
+    # force single-match vector into Nx1 matrix; otherwise the result is already a matrix, and as.matrix is a no-op.
+    summing_combs <- as.matrix(combinations[,all_column_sums == required_sum])
+  }
+  return(summing_combs)
+}
+
+# given a list of values proportionate to ball volume, find the smallest number of balls that
+# can be partitioned into 3 equal-volume lists.
+# The return value is a list of <ball_count>, then 3 vectors for the partitions.
+# If none are found, return NULL
+find_shares <- function(d3s) {
+  # Start at count of 3 - no way to split 1 or 2 balls into 3 equal partitions.
+  for (i in seq(3, length(d3s))) {
+    # minor optimization: skip if the total is not a multiple of 3
+    if (sums[i] %% 3 == 0) {
+      find_sum <- sums[i] / 3 # the sought sum
+      cur_d3s <- d3s[1:i] # the list of i balls to consider in this step
+      # now consider all the combinations of the balls, from size 1 up to <num balls> - 2
+      # (no need to consider those largest combinations, because they wouldn't leave any balls
+      # to be shared by the other two heirs).
+      for (j in seq(i - 2)) {
+        # get a matrix of all the combinations of size j that sum to the required value.
+        match1 <- get_summing_combs(cur_d3s, j, find_sum)
+        if (!is.null(match1)) {
+          # found one or more combinations
+          # next try to find combinations in the complement set - the remaining balls
+          for (k in seq(ncol(match1))) {
+            compl <- cur_d3s[!cur_d3s %in% match1[,k]]
+            # look at all combinations of the complement set from 1 up to <size - 1>
+            # (like above, don't consider the largest combination, because that would leave
+            # nothing for the remaining heir)
+            for (l in seq(length(compl) - 1)) {
+              match2 <- get_summing_combs(compl, l, find_sum)
+              if (!is.null(match2)) {
+                # found at least one match in the complement set. The remainder must
+                # also be a sum, so this is a solution. Let's choose the first one.
+                # (It's possible that any remaining alternates are equivalent)
+                # bundle stuff up to be returned
+                share1 <- match1[,k]
+                share2 <- match2[,1]
+                share3 <- compl[!compl %in% share2]
+
+                return(list(ball_count=i, share1=share1, share2=share2, share3=share3))
+              }
+            }
+          }
         }
-        print("that's out of this list:")
-        print(cur_d3s)
       }
     }
-    # print(paste("subset length", i))
-    # combinations <- combn(d3s, i)
-    # out <- combinations[,apply(combinations, 2, sum)>=threshold]
-    # print (out)
   }
+  return(NULL)
+}
+solution <- find_shares(d3s)
+if (is.null(solution)) {
+  print("sorry, no solution was found")
+} else {
+  print(solution)
 }
 ```
+King Auric has `r solution$ball_count` gold balls, with diameter 1cm, 2cm, ..., `r solution$ball_count`cm. And he can divide them equally among his three children! Some sanity checking:
+```{r}
+sums[solution$ball_count] / 3
+sum(solution$share1)
+sum(solution$share2)
+sum(solution$share3)
+```
+Looks like all three shares add up to the required amount. But is there any overlap?
+```{r}
+intersect(solution$share1, solution$share2)
+intersect(solution$share1, solution$share3)
+intersect(solution$share2, solution$share3)
+```
+
+One more test, does all the shares together include all the balls?
+```{r}
+un <- union(union(solution$share1, solution$share2), union(solution$share1, solution$share3))
+un[sort.list(un)]
+all(un[sort.list(un)] == d3s[1:solution$ball_count])
+```
+
+That's that, seems like _a_ solution. I haven't shown that it's a solution with the minimal number of balls; if there's a bug in my code, I could have missed a smaller solution.
+
